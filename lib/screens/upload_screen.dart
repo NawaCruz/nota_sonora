@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'dart:io';
 import '../main.dart';
 import '../models/audiobook_model.dart';
 import 'dart:math';
@@ -54,8 +56,38 @@ class _UploadScreenState extends State<UploadScreen> {
           return;
         }
 
-        // Simular procesamiento
-        await Future.delayed(const Duration(seconds: 2));
+        // Extraer texto del PDF si es un archivo PDF
+        String extractedText = '';
+        if (extension.toLowerCase() == 'pdf') {
+          try {
+            // Leer bytes del archivo
+            List<int> pdfBytes;
+            if (kIsWeb) {
+              pdfBytes = fileBytes!;
+            } else {
+              final file = File(filePath!);
+              pdfBytes = await file.readAsBytes();
+            }
+
+            // Cargar el documento PDF
+            final PdfDocument document = PdfDocument(inputBytes: pdfBytes);
+            
+            // Extraer texto de todas las páginas
+            final PdfTextExtractor extractor = PdfTextExtractor(document);
+            for (int i = 0; i < document.pages.count; i++) {
+              extractedText += extractor.extractText(startPageIndex: i, endPageIndex: i);
+              extractedText += '\n'; // Separador entre páginas
+            }
+            
+            // Cerrar el documento
+            document.dispose();
+            
+            debugPrint('PDF procesado: ${extractedText.length} caracteres extraídos');
+          } catch (e) {
+            debugPrint('Error al extraer texto del PDF: $e');
+            extractedText = 'Error al procesar el contenido del PDF';
+          }
+        }
 
         final newBook = AudioBookModel(
           id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -64,9 +96,12 @@ class _UploadScreenState extends State<UploadScreen> {
           color: _getRandomColor(),
           progress: 0.0,
           isNew: true,
-          aiSummary: 'Procesando documento...',
+          aiSummary: extractedText.isEmpty 
+            ? 'Procesando documento...' 
+            : 'PDF cargado con ${extractedText.length} caracteres',
           pdfPath: filePath, // Ruta para móvil/desktop
           pdfBytes: fileBytes, // Bytes para web
+          fullText: extractedText, // Texto extraído del PDF
         );
 
         audiobookService.addBook(newBook);

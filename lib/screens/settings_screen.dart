@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/tts_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -8,11 +9,43 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  final TtsService _ttsService = TtsService();
   String _selectedVoice = 'Español - Voz Femenina (Natural)';
+  List<Map<dynamic, dynamic>> _availableVoices = [];
+  List<Map<dynamic, dynamic>> _spanishVoices = [];
   double _speechRate = 1.0;
   bool _aiPreview = true;
   bool _autoSummary = true;
   bool _chatEnabled = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeSettings();
+  }
+
+  Future<void> _initializeSettings() async {
+    await _ttsService.initialize();
+    
+    // Cargar voces disponibles
+    final voices = await _ttsService.getAvailableVoices();
+    if (voices.isNotEmpty) {
+      setState(() {
+        _availableVoices = voices.cast<Map<dynamic, dynamic>>();
+        
+        // Filtrar voces en español
+        _spanishVoices = _availableVoices.where((voice) {
+          final locale = voice['locale']?.toString().toLowerCase() ?? '';
+          return locale.startsWith('es');
+        }).toList();
+        
+        // Si hay voces en español, seleccionar la primera
+        if (_spanishVoices.isNotEmpty) {
+          _selectedVoice = _spanishVoices[0]['name']?.toString() ?? _selectedVoice;
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -195,6 +228,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   activeColor: const Color(0xFF5B66EA),
                   onChanged: (value) {
                     setState(() => _speechRate = value);
+                    _ttsService.setSpeechRate(value);
                   },
                 ),
               ),
@@ -331,11 +365,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              _buildVoiceOption('Español - Voz Femenina (Natural)'),
-              _buildVoiceOption('Español - Voz Masculina (Natural)'),
-              _buildVoiceOption('Español - Voz Neutra'),
-              _buildVoiceOption('English - Female Voice'),
-              _buildVoiceOption('English - Male Voice'),
+              if (_spanishVoices.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text('Cargando voces disponibles...'),
+                )
+              else
+                ..._spanishVoices.map((voice) {
+                  final voiceName = voice['name']?.toString() ?? 'Voz desconocida';
+                  final locale = voice['locale']?.toString() ?? '';
+                  return _buildVoiceOption(voiceName, locale, voice);
+                }).toList(),
             ],
           ),
         );
@@ -343,14 +383,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildVoiceOption(String voice) {
-    final isSelected = _selectedVoice == voice;
+  Widget _buildVoiceOption(String voiceName, String locale, Map<dynamic, dynamic> voiceData) {
+    final isSelected = _selectedVoice == voiceName;
     return ListTile(
-      title: Text(voice),
+      title: Text(voiceName),
+      subtitle: Text(locale, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
       trailing: isSelected ? const Icon(Icons.check, color: Color(0xFF5B66EA)) : null,
-      onTap: () {
-        setState(() => _selectedVoice = voice);
-        Navigator.pop(context);
+      onTap: () async {
+        setState(() => _selectedVoice = voiceName);
+        
+        // Aplicar la voz seleccionada al TTS
+        await _ttsService.setVoice({
+          'name': voiceData['name']?.toString() ?? '',
+          'locale': voiceData['locale']?.toString() ?? '',
+        });
+        
+        if (mounted) {
+          Navigator.pop(context);
+        }
       },
     );
   }

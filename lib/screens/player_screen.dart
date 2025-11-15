@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import '../models/audiobook_model.dart';
+import '../services/tts_service.dart';
 
 class PlayerScreen extends StatefulWidget {
   final AudioBookModel book;
@@ -15,9 +16,86 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
+  final TtsService _ttsService = TtsService();
   bool _isPlaying = false;
-  final double _progress = 0.0;
+  double _progress = 0.0;
+  Duration _currentTime = Duration.zero;
+  Duration _totalDuration = Duration.zero;
   String? _pdfError;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeTts();
+  }
+
+  Future<void> _initializeTts() async {
+    await _ttsService.initialize();
+    
+    // Escuchar cambios en el estado de reproducción
+    _ttsService.isPlayingNotifier.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isPlaying = _ttsService.isPlayingNotifier.value;
+        });
+      }
+    });
+
+    // Escuchar cambios en el progreso
+    _ttsService.progressNotifier.addListener(() {
+      if (mounted) {
+        setState(() {
+          _progress = _ttsService.progressNotifier.value;
+        });
+      }
+    });
+
+    // Escuchar cambios en el tiempo actual
+    _ttsService.currentTimeNotifier.addListener(() {
+      if (mounted) {
+        setState(() {
+          _currentTime = _ttsService.currentTimeNotifier.value;
+        });
+      }
+    });
+
+    // Escuchar cambios en la duración total
+    _ttsService.totalDurationNotifier.addListener(() {
+      if (mounted) {
+        setState(() {
+          _totalDuration = _ttsService.totalDurationNotifier.value;
+        });
+      }
+    });
+  }
+
+  void _togglePlayPause() async {
+    if (_isPlaying) {
+      await _ttsService.pause();
+    } else {
+      if (widget.book.fullText.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No hay texto para reproducir. El PDF debe ser cargado primero.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      
+      if (_ttsService.isPaused) {
+        await _ttsService.resume();
+      } else {
+        await _ttsService.speak(widget.book.fullText);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _ttsService.stop();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -296,27 +374,52 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // Book cover eliminado al priorizar el visor de PDF y placeholder.
 
   Widget _buildProgressBar() {
+    // Formatear tiempo
+    String formatDuration(Duration duration) {
+      String twoDigits(int n) => n.toString().padLeft(2, '0');
+      final hours = duration.inHours;
+      final minutes = duration.inMinutes.remainder(60);
+      final seconds = duration.inSeconds.remainder(60);
+      
+      if (hours > 0) {
+        return '$hours:${twoDigits(minutes)}:${twoDigits(seconds)}';
+      }
+      return '${twoDigits(minutes)}:${twoDigits(seconds)}';
+    }
+
     return Column(
       children: [
-        LinearProgressIndicator(
-          value: _progress,
-          backgroundColor: Colors.grey[200],
-          valueColor: AlwaysStoppedAnimation(
-            Color(int.parse('0xFF${widget.book.color}')),
+        GestureDetector(
+          onTapDown: (details) {
+            // Calcular la posición tocada
+            final RenderBox box = context.findRenderObject() as RenderBox;
+            final localPosition = details.localPosition.dx;
+            final width = box.size.width;
+            final newProgress = (localPosition / width).clamp(0.0, 1.0);
+            
+            // Buscar a la nueva posición
+            _ttsService.seekToPosition(newProgress);
+          },
+          child: LinearProgressIndicator(
+            value: _progress,
+            backgroundColor: Colors.grey[200],
+            valueColor: AlwaysStoppedAnimation(
+              Color(int.parse('0xFF${widget.book.color}')),
+            ),
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(3),
           ),
-          minHeight: 6,
-          borderRadius: BorderRadius.circular(3),
         ),
         const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              '0:00',
+              formatDuration(_currentTime),
               style: TextStyle(color: Colors.grey[600]),
             ),
             Text(
-              '45:30',
+              formatDuration(_totalDuration),
               style: TextStyle(color: Colors.grey[600]),
             ),
           ],
@@ -332,7 +435,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
         IconButton(
           icon: const Icon(Icons.replay_10),
           iconSize: 36,
-          onPressed: () {},
+          onPressed: () {
+            _ttsService.seekBackward(10);
+          },
         ),
         Container(
           decoration: BoxDecoration(
@@ -352,15 +457,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
               color: Colors.white,
             ),
             iconSize: 48,
-            onPressed: () {
-              setState(() => _isPlaying = !_isPlaying);
-            },
+            onPressed: _togglePlayPause,
           ),
         ),
         IconButton(
           icon: const Icon(Icons.forward_10),
           iconSize: 36,
-          onPressed: () {},
+          onPressed: () {
+            _ttsService.seekForward(10);
+          },
         ),
       ],
     );
