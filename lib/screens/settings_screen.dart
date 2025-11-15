@@ -139,10 +139,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    _selectedVoice,
-                    style: const TextStyle(fontSize: 14),
+                  Flexible(
+                    child: Text(
+                      _selectedVoice,
+                      style: const TextStyle(fontSize: 14),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   const Icon(Icons.arrow_drop_down),
                 ],
               ),

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../main.dart';
+import '../models/audiobook_model.dart';
 
 class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key});
@@ -10,6 +12,7 @@ class AnalysisScreen extends StatefulWidget {
 class _AnalysisScreenState extends State<AnalysisScreen> {
   final TextEditingController _messageController = TextEditingController();
   final List<Map<String, String>> _messages = [];
+  AudioBookModel? _selectedBook;
 
   @override
   void dispose() {
@@ -31,6 +34,116 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
       });
       _messageController.clear();
     }
+  }
+
+  void _showBookSelector() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: Text(
+                'Selecciona un libro',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            StreamBuilder<List<AudioBookModel>>(
+              stream: audiobookService.booksStream,
+              builder: (context, snapshot) {
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(40),
+                    child: Column(
+                      children: [
+                        Icon(Icons.menu_book_outlined, 
+                          size: 60, 
+                          color: Colors.grey[300]
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No hay libros subidos',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Ve a "Subir" para agregar un libro',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final books = snapshot.data!;
+                return ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: books.length,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  itemBuilder: (context, index) {
+                    final book = books[index];
+                    return ListTile(
+                      leading: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Color(int.parse('FF${book.color}', radix: 16)),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.book, color: Colors.white, size: 20),
+                      ),
+                      title: Text(
+                        book.title,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        book.author,
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                      trailing: _selectedBook?.id == book.id
+                          ? const Icon(Icons.check_circle, color: Color(0xFF5B66EA))
+                          : null,
+                      onTap: () {
+                        setState(() => _selectedBook = book);
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -72,6 +185,8 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                            const SizedBox(height: 16),
+                            _buildBookSelector(),
                             const SizedBox(height: 20),
                             _buildAnalysisTools(),
                           ],
@@ -129,6 +244,61 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     );
   }
 
+  Widget _buildBookSelector() {
+    return StreamBuilder<List<AudioBookModel>>(
+      stream: audiobookService.booksStream,
+      builder: (context, snapshot) {
+        final hasBooks = snapshot.hasData && snapshot.data!.isNotEmpty;
+        
+        return InkWell(
+          onTap: hasBooks ? _showBookSelector : null,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF5B66EA).withAlpha(26),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFF5B66EA).withAlpha(51),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.menu_book,
+                  color: const Color(0xFF5B66EA),
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _selectedBook != null
+                        ? _selectedBook!.title
+                        : hasBooks
+                            ? 'Selecciona un libro'
+                            : 'No hay libros disponibles',
+                    style: TextStyle(
+                      color: const Color(0xFF5B66EA),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (hasBooks)
+                  Icon(
+                    Icons.arrow_drop_down,
+                    color: const Color(0xFF5B66EA),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildAnalysisTools() {
     return GridView.count(
       shrinkWrap: true,
@@ -150,25 +320,49 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {},
+        onTap: () {
+          if (_selectedBook == null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('⚠️ Selecciona un libro primero'),
+                backgroundColor: Color(0xFFFFA726),
+                duration: Duration(seconds: 2),
+              ),
+            );
+            return;
+          }
+          // Aquí iría la lógica de cada herramienta
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$label: ${_selectedBook!.title}'),
+              backgroundColor: color,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        },
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
             color: color.withAlpha(26),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: color.withAlpha(51)),
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: color, size: 24),
-              const SizedBox(width: 12),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],

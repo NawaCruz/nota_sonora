@@ -10,9 +10,16 @@ final audiobookService = AudiobookService();
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Inicializar Firebase de forma opcional (no bloquea si falla)
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint('✅ Firebase inicializado correctamente');
+  } catch (e) {
+    debugPrint('⚠️ Firebase no disponible: $e');
+    // La app continúa sin Firebase
+  }
 
   runApp(const AudioBookApp());
 }
