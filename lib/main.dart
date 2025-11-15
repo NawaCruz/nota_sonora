@@ -8,7 +8,6 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  print("🔥 Firebase inicializado correctamente 🔥");
 
   runApp(const MyApp());
 }
@@ -23,7 +22,7 @@ class MyApp extends StatelessWidget {
       home: Scaffold(
         appBar: AppBar(title: const Text('Nota Sonora')),
         body: const Center(
-          child: Text('Firebase inicializado ✅'),
+          child: Text('Firebase inicializado correctamente ✔'),
         ),
       ),
     );
