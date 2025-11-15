@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 class AudioBookModel {
   final String id;
   final String title;
@@ -6,6 +8,9 @@ class AudioBookModel {
   final double progress;
   final bool isNew;
   final String aiSummary;
+  final String? pdfPath; // Ruta local del PDF (móvil/desktop)
+  final String? pdfUrl; // URL del PDF (Firebase Storage, etc.)
+  final Uint8List? pdfBytes; // Bytes del PDF (para web)
 
   AudioBookModel({
     required this.id,
@@ -15,5 +20,8 @@ class AudioBookModel {
     required this.progress,
     required this.isNew,
     required this.aiSummary,
+    this.pdfPath,
+    this.pdfUrl,
+    this.pdfBytes,
   });
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../main.dart';
@@ -16,45 +17,88 @@ class _UploadScreenState extends State<UploadScreen> {
   String? _currentFileName;
 
   Future<void> _pickFile() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'epub', 'txt', 'docx'],
-    );
-
-    if (result != null) {
-      setState(() {
-        _isProcessing = true;
-        _currentFileName = result.files.single.name;
-      });
-
-      await Future.delayed(const Duration(seconds: 2));
-
-      final fileName = result.files.single.name;
-      final extension = result.files.single.extension ?? '';
-      
-      final newBook = AudioBookModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: fileName.replaceAll('.$extension', ''),
-        author: 'Documento subido',
-        color: _getRandomColor(),
-        progress: 0.0,
-        isNew: true,
-        aiSummary: 'Procesando documento...',
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'epub', 'txt', 'docx'],
+        withData: true, // Asegura que en Web tengamos los bytes del archivo
       );
 
-      audiobookService.addBook(newBook);
+      if (result != null) {
+        setState(() {
+          _isProcessing = true;
+          _currentFileName = result.files.single.name;
+        });
 
+        final fileName = result.files.single.name;
+        final extension = result.files.single.extension ?? '';
+        
+        // Para web, usar bytes. Para móvil/desktop, usar path
+        final filePath = kIsWeb ? null : result.files.single.path;
+        final fileBytes = result.files.single.bytes;
+
+        // Validación específica para Web: si no llegaron bytes, informar y salir
+        if (kIsWeb && (fileBytes == null || fileBytes.isEmpty)) {
+          setState(() {
+            _isProcessing = false;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No se pudieron leer los bytes del archivo en el navegador. Intenta con un PDF más pequeño o prueba en móvil/desktop.'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+          return;
+        }
+
+        // Simular procesamiento
+        await Future.delayed(const Duration(seconds: 2));
+
+        final newBook = AudioBookModel(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          title: fileName.replaceAll('.$extension', ''),
+          author: 'Documento subido',
+          color: _getRandomColor(),
+          progress: 0.0,
+          isNew: true,
+          aiSummary: 'Procesando documento...',
+          pdfPath: filePath, // Ruta para móvil/desktop
+          pdfBytes: fileBytes, // Bytes para web
+        );
+
+        audiobookService.addBook(newBook);
+
+        setState(() {
+          _isProcessing = false;
+          _currentFileName = null;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✓ Archivo convertido a audiolibro'),
+              backgroundColor: Color(0xFF4CAF50),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error al procesar archivo: $e');
       setState(() {
         _isProcessing = false;
         _currentFileName = null;
       });
-
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✓ Archivo convertido a audiolibro'),
-            backgroundColor: Color(0xFF4CAF50),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: Text('Error al procesar archivo: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
