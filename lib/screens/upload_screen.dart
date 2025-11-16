@@ -246,14 +246,20 @@ class _UploadScreenState extends State<UploadScreen> {
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.all(24.0),
-      child: Row(
-        children: [
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'AudioBook AI',
-                style: TextStyle(
+        child: Row(
+          children: [
+            Image.asset(
+              'assets/images/logo (2).png',
+              height: 50,
+              width: 50,
+            ),
+            const SizedBox(width: 12),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AudiFy',
+                  style: TextStyle(
                   color: Colors.white,
                   fontSize: 28,
                   fontWeight: FontWeight.bold,

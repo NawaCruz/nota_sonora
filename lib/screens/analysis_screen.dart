@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
 import '../models/audiobook_model.dart';
+import '../services/ai_service.dart';
 
 class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key});
@@ -12,7 +13,14 @@ class AnalysisScreen extends StatefulWidget {
 class _AnalysisScreenState extends State<AnalysisScreen> {
   final TextEditingController _messageController = TextEditingController();
   final List<Map<String, String>> _messages = [];
+  final AiService _aiService = AiService();
   AudioBookModel? _selectedBook;
+  bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+  }
 
   @override
   void dispose() {
@@ -20,19 +28,117 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     super.dispose();
   }
 
-  void _sendMessage() {
-    if (_messageController.text.trim().isNotEmpty) {
+  Future<void> _sendMessage() async {
+    if (_messageController.text.trim().isEmpty || _selectedBook == null) {
+      return;
+    }
+
+    final userMessage = _messageController.text.trim();
+    _messageController.clear();
+
+    setState(() {
+      _messages.add({
+        'role': 'user',
+        'message': userMessage,
+      });
+      _isProcessing = true;
+    });
+
+    try {
+      final response = await _aiService.chatAboutBook(
+        _selectedBook!.title,
+        _selectedBook!.fullText,
+        userMessage,
+      );
+
       setState(() {
         _messages.add({
-          'role': 'user',
-          'message': _messageController.text,
+          'role': 'assistant',
+          'message': response,
         });
+        _isProcessing = false;
+      });
+    } catch (e) {
+      setState(() {
         _messages.add({
           'role': 'assistant',
-          'message': 'Esta es una respuesta simulada de la IA...',
+          'message': 'Error al procesar tu mensaje: $e',
         });
+        _isProcessing = false;
       });
-      _messageController.clear();
+    }
+  }
+
+  Future<void> _handleToolTap(String tool, Color color) async {
+    if (tool == 'Resumir') {
+      // Solo Resumir funciona, los demás en desarrollo
+      if (_selectedBook == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ Selecciona un libro primero'),
+            backgroundColor: Color(0xFFFFA726),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      if (_selectedBook!.fullText.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ Este libro no tiene texto cargado'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      await _generateSummary();
+    } else {
+      // Otras herramientas en desarrollo
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🚧 $tool - En desarrollo'),
+          backgroundColor: color,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _generateSummary() async {
+    setState(() {
+      _isProcessing = true;
+      _messages.add({
+        'role': 'system',
+        'message': '📝 Generando resumen de "${_selectedBook!.title}"...',
+      });
+    });
+
+    try {
+      final summary = await _aiService.generateSummary(
+        _selectedBook!.title,
+        _selectedBook!.fullText,
+      );
+
+      setState(() {
+        _messages.removeLast(); // Remover mensaje de "Generando..."
+        _messages.add({
+          'role': 'assistant',
+          'message': summary,
+        });
+        _isProcessing = false;
+      });
+    } catch (e) {
+      setState(() {
+        _messages.removeLast();
+        _messages.add({
+          'role': 'assistant',
+          'message': '❌ Error al generar resumen: $e',
+        });
+        _isProcessing = false;
+      });
     }
   }
 
@@ -69,8 +175,10 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
             ),
             StreamBuilder<List<AudioBookModel>>(
               stream: audiobookService.booksStream,
+              initialData: audiobookService.currentBooks,
               builder: (context, snapshot) {
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                final books = snapshot.data ?? [];
+                if (books.isEmpty) {
                   return Padding(
                     padding: const EdgeInsets.all(40),
                     child: Column(
@@ -100,40 +208,122 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                   );
                 }
 
-                final books = snapshot.data!;
                 return ListView.builder(
                   shrinkWrap: true,
                   itemCount: books.length,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   itemBuilder: (context, index) {
                     final book = books[index];
-                    return ListTile(
-                      leading: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Color(int.parse('FF${book.color}', radix: 16)),
-                          borderRadius: BorderRadius.circular(8),
+                    final isSelected = _selectedBook?.id == book.id;
+                    
+                    return Card(
+                      elevation: isSelected ? 2 : 0,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: isSelected 
+                              ? const Color(0xFF5B66EA) 
+                              : Colors.grey.shade200,
+                          width: isSelected ? 2 : 1,
                         ),
-                        child: const Icon(Icons.book, color: Colors.white, size: 20),
                       ),
-                      title: Text(
-                        book.title,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, 
+                          vertical: 8,
+                        ),
+                        leading: Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Color(int.parse('0xFF${book.color}')),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.menu_book,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                        title: Text(
+                          book.title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: isSelected 
+                                ? const Color(0xFF5B66EA) 
+                                : Colors.black87,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text(
+                              book.author,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            if (book.fullText.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle,
+                                      size: 14,
+                                      color: Colors.green[600],
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${book.fullText.length} caracteres',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.green[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                        trailing: isSelected
+                            ? Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF5B66EA),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              )
+                            : Icon(
+                                Icons.arrow_forward_ios,
+                                size: 16,
+                                color: Colors.grey[400],
+                              ),
+                        onTap: () {
+                          setState(() {
+                            _selectedBook = book;
+                          });
+                          Navigator.pop(context);
+                          
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('📚 Libro seleccionado: ${book.title}'),
+                              backgroundColor: const Color(0xFF4CAF50),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        },
                       ),
-                      subtitle: Text(
-                        book.author,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                      trailing: _selectedBook?.id == book.id
-                          ? const Icon(Icons.check_circle, color: Color(0xFF5B66EA))
-                          : null,
-                      onTap: () {
-                        setState(() => _selectedBook = book);
-                        Navigator.pop(context);
-                      },
                     );
                   },
                 );
@@ -211,14 +401,20 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.all(24.0),
-      child: Row(
-        children: [
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'AudioBook AI',
-                style: TextStyle(
+        child: Row(
+          children: [
+            Image.asset(
+              'assets/images/logo (2).png',
+              height: 50,
+              width: 50,
+            ),
+            const SizedBox(width: 12),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AudiFy',
+                  style: TextStyle(
                   color: Colors.white,
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -247,49 +443,120 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   Widget _buildBookSelector() {
     return StreamBuilder<List<AudioBookModel>>(
       stream: audiobookService.booksStream,
+      initialData: audiobookService.currentBooks,
       builder: (context, snapshot) {
-        final hasBooks = snapshot.hasData && snapshot.data!.isNotEmpty;
+        final books = snapshot.data ?? [];
+        final hasBooks = books.isNotEmpty;
         
         return InkWell(
           onTap: hasBooks ? _showBookSelector : null,
           borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF5B66EA).withAlpha(26),
+              gradient: _selectedBook != null
+                  ? LinearGradient(
+                      colors: [
+                        Color(int.parse('0xFF${_selectedBook!.color}')).withOpacity(0.1),
+                        Color(int.parse('0xFF${_selectedBook!.color}')).withOpacity(0.05),
+                      ],
+                    )
+                  : null,
+              color: _selectedBook == null 
+                  ? const Color(0xFF5B66EA).withAlpha(26)
+                  : null,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: const Color(0xFF5B66EA).withAlpha(51),
+                color: _selectedBook != null
+                    ? Color(int.parse('0xFF${_selectedBook!.color}')).withOpacity(0.3)
+                    : const Color(0xFF5B66EA).withAlpha(51),
+                width: 2,
               ),
             ),
             child: Row(
               children: [
-                Icon(
-                  Icons.menu_book,
-                  color: const Color(0xFF5B66EA),
-                  size: 20,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _selectedBook != null
-                        ? _selectedBook!.title
-                        : hasBooks
-                            ? 'Selecciona un libro'
-                            : 'No hay libros disponibles',
-                    style: TextStyle(
-                      color: const Color(0xFF5B66EA),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                if (_selectedBook != null)
+                  Container(
+                    width: 40,
+                    height: 40,
+                    margin: const EdgeInsets.only(right: 12),
+                    decoration: BoxDecoration(
+                      color: Color(int.parse('0xFF${_selectedBook!.color}')),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    child: const Icon(
+                      Icons.menu_book,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  )
+                else
+                  Container(
+                    margin: const EdgeInsets.only(right: 12),
+                    child: const Icon(
+                      Icons.menu_book_outlined,
+                      color: Color(0xFF5B66EA),
+                      size: 24,
+                    ),
+                  ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedBook != null
+                            ? _selectedBook!.title
+                            : hasBooks
+                                ? 'Selecciona un libro'
+                                : 'No hay libros disponibles',
+                        style: TextStyle(
+                          color: _selectedBook != null
+                              ? Color(int.parse('0xFF${_selectedBook!.color}'))
+                              : const Color(0xFF5B66EA),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (_selectedBook != null) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: Colors.green[600],
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                _selectedBook!.fullText.isNotEmpty
+                                    ? 'Listo para análisis (${_selectedBook!.fullText.length} caracteres)'
+                                    : 'Sin contenido extraído',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _selectedBook!.fullText.isNotEmpty
+                                      ? Colors.green[700]
+                                      : Colors.orange[700],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (hasBooks)
                   Icon(
-                    Icons.arrow_drop_down,
-                    color: const Color(0xFF5B66EA),
+                    Icons.arrow_drop_down_circle,
+                    color: _selectedBook != null
+                        ? Color(int.parse('0xFF${_selectedBook!.color}'))
+                        : const Color(0xFF5B66EA),
+                    size: 24,
                   ),
               ],
             ),
@@ -320,26 +587,7 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {
-          if (_selectedBook == null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('⚠️ Selecciona un libro primero'),
-                backgroundColor: Color(0xFFFFA726),
-                duration: Duration(seconds: 2),
-              ),
-            );
-            return;
-          }
-          // Aquí iría la lógica de cada herramienta
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('$label: ${_selectedBook!.title}'),
-              backgroundColor: color,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        },
+        onTap: () => _handleToolTap(label, color),
         borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -398,26 +646,67 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
 
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: _messages.length,
+      reverse: false,
+      itemCount: _messages.length + (_isProcessing ? 1 : 0),
       itemBuilder: (context, index) {
+        // Mostrar indicador de carga al final
+        if (_isProcessing && index == _messages.length) {
+          return Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Pensando...',
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         final message = _messages[index];
         final isUser = message['role'] == 'user';
+        final isSystem = message['role'] == 'system';
+        
         return Align(
           alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
           child: Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.7,
+              maxWidth: MediaQuery.of(context).size.width * 0.85,
             ),
             decoration: BoxDecoration(
-              color: isUser ? const Color(0xFF5B66EA) : Colors.grey[200],
+              color: isUser 
+                  ? const Color(0xFF5B66EA) 
+                  : isSystem
+                      ? Colors.amber[100]
+                      : Colors.grey[200],
               borderRadius: BorderRadius.circular(16),
             ),
             child: Text(
               message['message']!,
               style: TextStyle(
                 color: isUser ? Colors.white : Colors.black87,
+                fontSize: 14,
               ),
             ),
           ),
@@ -427,6 +716,9 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   }
 
   Widget _buildInputArea() {
+    final hasBookSelected = _selectedBook != null;
+    final hasContent = _selectedBook?.fullText.isNotEmpty ?? false;
+    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -439,37 +731,87 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: TextField(
-              controller: _messageController,
-              decoration: InputDecoration(
-                hintText: 'Escribe tu mensaje...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(25),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: Colors.grey[100],
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
+          if (!hasBookSelected || !hasContent)
+            Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      !hasBookSelected 
+                          ? 'Selecciona un libro para comenzar'
+                          : 'Este libro no tiene contenido para analizar',
+                      style: TextStyle(
+                        color: Colors.orange[900],
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _messageController,
+                  enabled: hasBookSelected && hasContent && !_isProcessing,
+                  decoration: InputDecoration(
+                    hintText: hasBookSelected && hasContent
+                        ? 'Escribe tu mensaje...'
+                        : 'Selecciona un libro primero',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(25),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: hasBookSelected && hasContent
+                        ? Colors.grey[100]
+                        : Colors.grey[200],
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                  ),
+                  onSubmitted: (_) => _sendMessage(),
                 ),
               ),
-              onSubmitted: (_) => _sendMessage(),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFF5B66EA),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.send, color: Colors.white),
-              onPressed: _sendMessage,
-            ),
+              const SizedBox(width: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: hasBookSelected && hasContent && !_isProcessing
+                      ? const Color(0xFF5B66EA)
+                      : Colors.grey[400],
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: _isProcessing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send, color: Colors.white),
+                  onPressed: hasBookSelected && hasContent && !_isProcessing
+                      ? _sendMessage
+                      : null,
+                ),
+              ),
+            ],
           ),
         ],
       ),

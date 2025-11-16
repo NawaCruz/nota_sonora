@@ -10,9 +10,10 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final TtsService _ttsService = TtsService();
-  String _selectedVoice = 'Español - Voz Femenina (Natural)';
+  String _selectedVoice = 'Voz del Sistema';
+  String _selectedVoiceId = '';
   List<Map<dynamic, dynamic>> _availableVoices = [];
-  List<Map<dynamic, dynamic>> _spanishVoices = [];
+  List<Map<String, String>> _simplifiedVoices = [];
   double _speechRate = 1.0;
   bool _aiPreview = true;
   bool _autoSummary = true;
@@ -33,15 +34,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _availableVoices = voices.cast<Map<dynamic, dynamic>>();
         
-        // Filtrar voces en español
-        _spanishVoices = _availableVoices.where((voice) {
-          final locale = voice['locale']?.toString().toLowerCase() ?? '';
-          return locale.startsWith('es');
-        }).toList();
+        // Crear lista simplificada de voces en español
+        _simplifiedVoices = [];
+        int femaleCount = 0;
+        int maleCount = 0;
         
-        // Si hay voces en español, seleccionar la primera
-        if (_spanishVoices.isNotEmpty) {
-          _selectedVoice = _spanishVoices[0]['name']?.toString() ?? _selectedVoice;
+        for (var voice in _availableVoices) {
+          final locale = voice['locale']?.toString().toLowerCase() ?? '';
+          final name = voice['name']?.toString() ?? '';
+          
+          if (locale.startsWith('es')) {
+            String displayName;
+            String country = '';
+            
+            // Determinar el país
+            if (locale.contains('us')) {
+              country = 'Estados Unidos';
+            } else if (locale.contains('es')) {
+              country = 'España';
+            } else if (locale.contains('mx')) {
+              country = 'México';
+            } else if (locale.contains('ar')) {
+              country = 'Argentina';
+            } else {
+              country = 'Internacional';
+            }
+            
+            // Simplificar el nombre
+            if (name.toLowerCase().contains('female') || name.toLowerCase().contains('woman')) {
+              femaleCount++;
+              displayName = 'Voz Femenina ${femaleCount > 1 ? femaleCount : ''} ($country)'.trim();
+            } else if (name.toLowerCase().contains('male') || name.toLowerCase().contains('man')) {
+              maleCount++;
+              displayName = 'Voz Masculina ${maleCount > 1 ? maleCount : ''} ($country)'.trim();
+            } else {
+              displayName = 'Voz $country';
+            }
+            
+            _simplifiedVoices.add({
+              'displayName': displayName,
+              'country': country,
+              'actualName': name,
+              'locale': locale,
+            });
+          }
+        }
+        
+        // Si hay voces, seleccionar la primera
+        if (_simplifiedVoices.isNotEmpty) {
+          _selectedVoice = _simplifiedVoices[0]['displayName']!;
+          _selectedVoiceId = _simplifiedVoices[0]['actualName']!;
         }
       });
     }
@@ -102,14 +144,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.all(24.0),
-      child: Row(
-        children: [
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'AudioBook AI',
-                style: TextStyle(
+        child: Row(
+          children: [
+            Image.asset(
+              'assets/images/logo (2).png',
+              height: 50,
+              width: 50,
+            ),
+            const SizedBox(width: 12),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AudiFy',
+                  style: TextStyle(
                   color: Colors.white,
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -365,42 +413,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (_spanishVoices.isEmpty)
+              if (_simplifiedVoices.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(16.0),
                   child: Text('Cargando voces disponibles...'),
                 )
               else
-                ..._spanishVoices.map((voice) {
-                  final voiceName = voice['name']?.toString() ?? 'Voz desconocida';
-                  final locale = voice['locale']?.toString() ?? '';
-                  return _buildVoiceOption(voiceName, locale, voice);
-                }).toList(),
+                ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _simplifiedVoices.length,
+                  itemBuilder: (context, index) {
+                    final voice = _simplifiedVoices[index];
+                    final displayName = voice['displayName']!;
+                    final country = voice['country']!;
+                    final actualName = voice['actualName']!;
+                    final isSelected = _selectedVoiceId == actualName;
+                    
+                    return ListTile(
+                      title: Text(displayName),
+                      subtitle: Text(country, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      trailing: isSelected ? const Icon(Icons.check, color: Color(0xFF5B66EA)) : null,
+                      onTap: () async {
+                        setState(() {
+                          _selectedVoice = displayName;
+                          _selectedVoiceId = actualName;
+                        });
+                        
+                        // Aplicar la voz seleccionada al TTS
+                        await _ttsService.setVoice({
+                          'name': actualName,
+                          'locale': voice['locale']!,
+                        });
+                        
+                        if (mounted) {
+                          Navigator.pop(context);
+                        }
+                      },
+                    );
+                  },
+                ),
             ],
           ),
         );
-      },
-    );
-  }
-
-  Widget _buildVoiceOption(String voiceName, String locale, Map<dynamic, dynamic> voiceData) {
-    final isSelected = _selectedVoice == voiceName;
-    return ListTile(
-      title: Text(voiceName),
-      subtitle: Text(locale, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-      trailing: isSelected ? const Icon(Icons.check, color: Color(0xFF5B66EA)) : null,
-      onTap: () async {
-        setState(() => _selectedVoice = voiceName);
-        
-        // Aplicar la voz seleccionada al TTS
-        await _ttsService.setVoice({
-          'name': voiceData['name']?.toString() ?? '',
-          'locale': voiceData['locale']?.toString() ?? '',
-        });
-        
-        if (mounted) {
-          Navigator.pop(context);
-        }
       },
     );
   }

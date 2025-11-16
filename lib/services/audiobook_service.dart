@@ -7,6 +7,9 @@ class AudiobookService {
 
   Stream<List<AudioBookModel>> get booksStream => _booksController.stream;
   List<AudioBookModel> get books => List.unmodifiable(_books);
+  
+  // Obtener snapshot inicial
+  List<AudioBookModel> get currentBooks => _books;
 
   void addBook(AudioBookModel book) {
     _books.add(book);
